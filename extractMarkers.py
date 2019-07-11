@@ -22,7 +22,7 @@ parser.add_argument('--mocap_transform', metavar='M', type=str, nargs='+', defau
                     help='MoCap system name or list of rotations in degrees along the axes in the OpenSim coordinate '
                          'system optionally trailed by '
                          'correct axes order eg. yxz 90 180 0.')
-
+# Loads a C3D file and maps variables to TRC variables
 def loadC3D(file):
     reader = c3d.Reader(file)
     data = dict()
@@ -43,10 +43,12 @@ def loadC3D(file):
 
     return data
 
+# Translates marker positions relative to another marker
 def translateToOrigin(data, origLabel):
     data["Data"] = data["Data"] - data["Data"][data["Labels"].index(origLabel)]
     return data
 
+# Filters unnecessary markers and renames them
 def filterMarkers(data, markers):
 
     # Filter markers
@@ -64,6 +66,7 @@ def filterMarkers(data, markers):
 
     return data
 
+# Transform coordinates from lab coordinate system to OpenSim coordinate system
 def mocapTransform(data, transform):
 
     permutation = [0,1,2]
@@ -90,7 +93,7 @@ def mocapTransform(data, transform):
     data["Data"] = rot.apply(data["Data"].reshape(-1,3)[:,permutation]).reshape(data["Data"].shape)
     return data
 
-
+# Writes the data in a TRC file
 def writeTRC(data, file):
 
     # Write header
