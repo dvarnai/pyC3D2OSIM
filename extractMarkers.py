@@ -1,4 +1,4 @@
-# Extract marker locations from C3D file and convert them into OpenSim 4.0 TRC format
+# Extract marker locations from C3D files and convert them into OpenSim TRC format
 
 import argparse
 import c3d
@@ -20,8 +20,7 @@ parser.add_argument('--origin_marker', metavar='R', type=str, default=None,
                     help='Transform markers relative to this marker')
 parser.add_argument('--mocap_transform', metavar='M', type=str, nargs='+', default=[],
                     help='MoCap system name or list of rotations in degrees along the axes in the OpenSim coordinate '
-                         'system optionally trailed by '
-                         'correct axes order eg. yxz 90 180 0.')
+                         'system optionally trailed by axes order for swapping eg. yxz 90 180 0.')
 # Loads a C3D file and maps variables to TRC variables
 def loadC3D(file):
     reader = c3d.Reader(file)
