@@ -111,7 +111,7 @@ def writeTRC(data, file):
     file.write("\n")
     file.write("\t")
     for i in range(len(data["Labels"]*3)):
-        file.write("\t%c%d" % (chr(ord('X')+(i%3)), math.ceil((i+1)/3)))
+        file.write("\t%c%d" % (chr(ord('X')+(i%3)), math.ceil((i+3)/3)))
     file.write("\n")
 
     # Write data
