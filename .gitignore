@@ -1,2 +1,4 @@
 venv/
 .idea/
+*.c3d
+*.trc
