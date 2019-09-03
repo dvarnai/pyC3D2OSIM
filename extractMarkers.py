@@ -7,6 +7,8 @@ import numpy as np
 import sys
 import math
 from scipy.spatial.transform import Rotation
+import scipy
+import xml.etree.ElementTree as ET
 
 # Command-line interface definition
 parser = argparse.ArgumentParser(description='Extract marker locations from C3D files and save in TRC format.')
@@ -18,9 +20,26 @@ parser.add_argument('--markers', metavar='M', type=lambda kv: kv.split('=', 1), 
                     default=None, help='List of markers to read and optionally renamed')
 parser.add_argument('--origin_marker', metavar='R', type=str, default=None,
                     help='Transform markers relative to this marker')
-parser.add_argument('--mocap_transform', metavar='M', type=str, nargs='+', default=[],
+parser.add_argument('--axes_markers', metavar='R', type=str, nargs='+', default=[],
+                    help='Rotate all markers along the axes defined by these markers eg. xyz 1 x2 y1 y2 z1 z2')
+parser.add_argument('--osim_model', metavar='M', type=argparse.FileType('r'),
+                    help='OpenSim model to use for transformations')
+parser.add_argument('--mocap_transform', metavar='T', type=str, nargs='+', default=[],
                     help='MoCap system name or list of rotations in degrees along the axes in the OpenSim coordinate '
                          'system optionally trailed by axes order for swapping eg. yxz 90 180 0.')
+
+# Loads marker position from .osim file
+def loadOSIM(file):
+    xml = ET.parse(file).getroot()
+    units = xml.find('*/length_units').text
+    multiplier = 1
+    if units == 'meters':
+        multiplier = 1000
+    markers = xml.findall('*/*/*/Marker')
+    keys = map(lambda x: x.attrib['name'], markers)
+    values = map(lambda x: np.array(x.find('location').text.strip().split(' '), dtype=np.float)*multiplier, markers)
+    return dict(zip(keys,values))
+
 # Loads a C3D file and maps variables to TRC variables
 def loadC3D(file):
     reader = c3d.Reader(file)
@@ -47,6 +66,39 @@ def translateToOrigin(data, origLabel):
     data["Data"] = data["Data"] - data["Data"][data["Labels"].index(origLabel)]
     return data
 
+# Rotate markers around axes specified by markers
+def rotateAroundAxes(data, rotations, modelMarkers):
+
+    if len(rotations) != len(rotations[0]*2) + 1:
+        raise ValueError("Correct format is order of axes followed by two marker specifying each axis")
+
+    for a, axis in enumerate(rotations[0]):
+
+        markerName1 = rotations[1+a*2]
+        markerName2 = rotations[1 + a*2 + 1]
+        marker1 = data["Labels"].index(markerName1)
+        marker2 = data["Labels"].index(markerName2)
+        axisIdx = ord(axis) - ord('x')
+        if (0<=axisIdx<=2) == False:
+            raise ValueError("Axes can only be x y or z")
+
+        origAxis = [0,0,0]
+        origAxis[axisIdx] = 1
+        if modelMarkers is not None:
+            origAxis = modelMarkers[markerName1] - modelMarkers[markerName2]
+            origAxis = modelMarkers[markerName1] - modelMarkers[markerName2]
+            origAxis /= scipy.linalg.norm(origAxis)
+        rotateAxis = data["Data"][marker1] - data["Data"][marker2]
+        rotateAxis /= scipy.linalg.norm(rotateAxis, axis=1, keepdims=True)
+
+        for i, rotAxis in enumerate(rotateAxis):
+            angle = np.arccos(np.clip(np.dot(origAxis, rotAxis), -1.0, 1.0))
+            r = Rotation.from_euler('y', -angle)
+            data["Data"][:,i] = r.apply(data["Data"][:,i])
+
+
+    return data
+
 # Filters unnecessary markers and renames them
 def filterMarkers(data, markers):
 
@@ -71,6 +123,7 @@ def mocapTransform(data, transform):
     permutation = [0,1,2]
     if len(transform) == 1:
         if transform[0] == 'qualisys':
+            permutation = [0, 1, 2]
             rotations = [90, 180, 0]
         else:
             raise ValueError("Unknown mocap system")
@@ -87,9 +140,10 @@ def mocapTransform(data, transform):
         raise ValueError("Transform must be a known mocap system or a list of rotation angles optionally trailed by "
                          "order of axes")
 
-    rot = Rotation.from_euler('XZY', np.array(rotations)[[0,2,1]]*[1,-1,1], degrees=True)
-
+    axes = "".join(map(lambda x: chr(x+ord('X')), permutation))
+    rot = Rotation.from_euler(axes, np.array(rotations)[permutation], degrees=True)
     data["Data"] = rot.apply(data["Data"].reshape(-1,3)[:,permutation]).reshape(data["Data"].shape)
+
     return data
 
 # Writes the data in a TRC file
@@ -129,17 +183,26 @@ if __name__ == '__main__':
     # Load C3D file
     data = loadC3D(args.input_file)
 
+    modelMarkers = None
+    if args.osim_model is not None:
+        modelMarkers = loadOSIM(args.osim_model)
+
     # Translate markers relative to origin marker
-    if(args.origin_marker is not None):
+    if args.origin_marker is not None:
         translateToOrigin(data, args.origin_marker)
 
     # Delete unnecessary markers and rename them
-    if(args.markers is not None):
+    if args.markers is not None:
         filterMarkers(data, args.markers[0])
 
     # MoCap transformation
-    if(len(args.mocap_transform) > 0):
+    if len(args.mocap_transform) > 0:
         mocapTransform(data, args.mocap_transform)
+
+    if len(args.axes_markers) > 0:
+        rotateAroundAxes(data, args.axes_markers, modelMarkers)
+
+    data["Data"] = (data["Data"].reshape(-1,3) + [0,431.569,0]).reshape(data["Data"].shape)
 
     # Write the data into the TRC file
     writeTRC(data, args.output_file)
