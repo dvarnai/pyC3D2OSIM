@@ -86,7 +86,6 @@ def rotateAroundAxes(data, rotations, modelMarkers):
         origAxis[axisIdx] = 1
         if modelMarkers is not None:
             origAxis = modelMarkers[markerName1] - modelMarkers[markerName2]
-            origAxis = modelMarkers[markerName1] - modelMarkers[markerName2]
             origAxis /= scipy.linalg.norm(origAxis)
         rotateAxis = data["Data"][marker1] - data["Data"][marker2]
         rotateAxis /= scipy.linalg.norm(rotateAxis, axis=1, keepdims=True)
