@@ -201,8 +201,6 @@ if __name__ == '__main__':
     if len(args.axes_markers) > 0:
         rotateAroundAxes(data, args.axes_markers, modelMarkers)
 
-    data["Data"] = (data["Data"].reshape(-1,3) + [0,431.569,0]).reshape(data["Data"].shape)
-
     # Write the data into the TRC file
     writeTRC(data, args.output_file)
 
