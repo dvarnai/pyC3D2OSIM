@@ -8,6 +8,8 @@ import sys
 import math
 from scipy.spatial.transform import Rotation
 import scipy
+import scipy.interpolate
+import pandas as pd
 import xml.etree.ElementTree as ET
 
 # Command-line interface definition
@@ -20,13 +22,15 @@ parser.add_argument('--markers', metavar='M', type=lambda kv: kv.split('=', 1), 
                     default=None, help='List of markers to read and optionally renamed')
 parser.add_argument('--origin_marker', metavar='R', type=str, default=None,
                     help='Transform markers relative to this marker')
-parser.add_argument('--axes_markers', metavar='R', type=str, nargs='+', default=[],
+parser.add_argument('--axes_markers', metavar='X', type=str, nargs='+', default=[],
                     help='Rotate all markers along the axes defined by these markers eg. xyz 1 x2 y1 y2 z1 z2')
 parser.add_argument('--osim_model', metavar='M', type=argparse.FileType('r'),
                     help='OpenSim model to use for transformations')
 parser.add_argument('--mocap_transform', metavar='T', type=str, nargs='+', default=[],
                     help='MoCap system name or list of rotations in degrees along the axes in the OpenSim coordinate '
                          'system optionally trailed by axes order for swapping eg. yxz 90 180 0.')
+parser.add_argument('--resample', metavar='S', type=int, default=0,
+                    help='Resample data using second order spline to desired rate in Hz.')
 
 # Loads marker position from .osim file
 def loadOSIM(file):
@@ -59,6 +63,23 @@ def loadC3D(file):
         for label, frameData in enumerate(points[:,0:3]):
             data["Data"][label][i-reader.header.first_frame] = frameData
 
+    return data
+
+# Resample data to desired Hz
+def resample(data, targetRate):
+
+    numFrames = math.ceil(len(data["Data"][0])/(data["DataRate"]/targetRate))
+    sampledData = np.ndarray(shape=(len(data["Data"]), numFrames, 3), dtype=np.float64)
+    for i in range(len(data["Data"])):
+        sourceX = np.arange(len(data["Data"][i]))/data["DataRate"]
+        targetX = np.linspace(0, sourceX[-1], num=numFrames)
+        interp = scipy.interpolate.interp1d(sourceX, data["Data"][i], kind='nearest', axis=0)
+        sampledData[i] = interp(targetX)
+
+
+    data["Data"] = sampledData
+    data["DataRate"] = targetRate
+    data["NumFrames"] = numFrames
     return data
 
 # Translates marker positions relative to another marker
@@ -185,6 +206,10 @@ if __name__ == '__main__':
     modelMarkers = None
     if args.osim_model is not None:
         modelMarkers = loadOSIM(args.osim_model)
+
+    # Resample data
+    if args.resample > 0:
+        resample(data, args.resample)
 
     # Translate markers relative to origin marker
     if args.origin_marker is not None:
