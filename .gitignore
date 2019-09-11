@@ -4,3 +4,7 @@ venv/
 *.trc
 *.sto
 *.mot
+*.tsv
+*.xml
+*.osim
+*.r
