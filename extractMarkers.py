@@ -1,7 +1,10 @@
 # Extract marker locations from C3D files and convert them into OpenSim TRC format
 
 import argparse
+from io import TextIOWrapper
+
 import c3d
+import csv
 from itertools import compress
 import numpy as np
 import sys
@@ -44,6 +47,32 @@ def loadOSIM(file):
     values = map(lambda x: np.array(x.find('location').text.strip().split(' '), dtype=np.float)*multiplier, markers)
     return dict(zip(keys,values))
 
+# Load TRC file
+def loadTRC(file):
+
+    tfile = TextIOWrapper(file)
+
+    # Skip first line and read metadata
+    tfile.readline()
+    reader = csv.DictReader(tfile, delimiter='\t')
+    data = dict(map(lambda kv: kv if kv[0] == 'Units' else (kv[0], int(kv[1])), reader.__next__().items()))
+
+    # Get marker names
+    reader = csv.reader(tfile, delimiter='\t')
+    data["Labels"] = list(filter(lambda x: x != '', map(lambda x: x.strip(), reader.__next__())))[2:]
+    reader.__next__()
+
+    # Read data
+    data["Data"] = np.empty(shape=(data["NumMarkers"], data["NumFrames"], 3), dtype=np.float)
+    data["Timestamps"] = np.empty(shape=(data["OrigNumFrames"]), dtype=np.float)
+    for row in reader:
+        data["Timestamps"][int(row[0])] = float(row[1])
+        for label in range(len(data["Labels"])):
+            data["Data"][label][int(row[0])] = list(map(lambda x: float(x), row[2+label*3:2+(label+1)*3]))
+
+    return data
+
+
 # Loads a C3D file and maps variables to TRC variables
 def loadC3D(file):
     reader = c3d.Reader(file)
@@ -57,6 +86,7 @@ def loadC3D(file):
     data["OrigDataStartFrame"] = reader.header.first_frame
     data["OrigNumFrames"] = reader.header.last_frame-reader.header.first_frame+1
     data["Labels"] = list(map(lambda x: x.strip(), reader.point_labels))
+    data["Timestamps"] = np.arange(0, data["NumFrames"]*1/data["DataRate"], 1/data["DataRate"])
 
     data["Data"] = np.empty(shape=(data["NumMarkers"], data["NumFrames"], 3), dtype=np.float)
     for i, points, analog in reader.read_frames():
@@ -71,7 +101,7 @@ def resample(data, targetRate):
     numFrames = math.ceil(len(data["Data"][0])/(data["DataRate"]/targetRate))
     sampledData = np.ndarray(shape=(len(data["Data"]), numFrames, 3), dtype=np.float64)
     for i in range(len(data["Data"])):
-        sourceX = np.arange(len(data["Data"][i]))/data["DataRate"]
+        sourceX = data["Timestamps"]
         targetX = np.linspace(0, sourceX[-1], num=numFrames)
         interp = scipy.interpolate.interp1d(sourceX, data["Data"][i], kind='nearest', axis=0)
         sampledData[i] = interp(targetX)
@@ -80,6 +110,7 @@ def resample(data, targetRate):
     data["Data"] = sampledData
     data["DataRate"] = targetRate
     data["NumFrames"] = numFrames
+    data["Timestamps"] = np.arange(0, data["NumFrames"] * 1 / data["DataRate"], 1 / data["DataRate"])
     return data
 
 # Translates marker positions relative to another marker
@@ -190,7 +221,7 @@ def writeTRC(data, file):
 
     # Write data
     for i in range(len(data["Data"][0])):
-        file.write("%d\t%f" % (i, 1/data["DataRate"]*i))
+        file.write("%d\t%f" % (i, data["Timestamps"][i]))
         for l in range(len(data["Data"])):
             file.write("\t%f\t%f\t%f" % tuple(data["Data"][l][i]))
         file.write("\n")
@@ -200,8 +231,11 @@ if __name__ == '__main__':
     # Parse command line arguments
     args = parser.parse_args()
 
-    # Load C3D file
-    data = loadC3D(args.input_file)
+    # Load input file
+    if args.input_file.name[-4:] == '.trc':
+        data = loadTRC(args.input_file)
+    else:
+        data = loadC3D(args.input_file)
 
     modelMarkers = None
     if args.osim_model is not None:
