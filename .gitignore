@@ -1,2 +1,10 @@
 venv/
 .idea/
+*.c3d
+*.trc
+*.sto
+*.mot
+*.tsv
+*.xml
+*.osim
+*.r
